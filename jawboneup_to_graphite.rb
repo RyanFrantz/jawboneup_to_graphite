@@ -3,6 +3,7 @@
 require 'jawbone-up'
 require 'date'
 require 'choice'
+#require 'ap'    # debug
 
 # PARAMETERS
 
@@ -35,7 +36,8 @@ end
 # fill in the blanks with the known sleep state until we encounter a sleep state change and
 # continue in this way until the end of the given data set.
 # Return a string that will be sent to Graphite
-$sleep_state_types = [ 'awake', 'light', 'deep' ]
+#$sleep_state_types = [ 'awake', 'light', 'deep', 'rem' ]
+$sleep_state_types = { 1 => 'awake', 2 => 'light', 5 => 'deep', 4 => 'rem' }
 def extrapolate_sleeps( sleep_state_details )
     message = []
     # there may be more than one sleep period returned
@@ -55,7 +57,7 @@ def extrapolate_sleeps( sleep_state_details )
 
             until current_sleep_epoch >= next_sleep_epoch.to_i do
                 current_sleep_epoch = current_sleep_epoch + 60
-                message.push( "#{$metric_prefix}.details.#{$sleep_state_types[ current_sleep_state - 1 ]} #{current_sleep_state} #{current_sleep_epoch}" )
+                message.push( "#{$metric_prefix}.details.#{$sleep_state_types[current_sleep_state]} #{current_sleep_state} #{current_sleep_epoch}" )
             end
         }
     }
@@ -82,7 +84,12 @@ else
     }
 
     if Choice.choices[:manual_date] then
-      today = Time.parse(Choice.choices[:manual_date]).to_i
+      #today = Time.new(Choice.choices[:manual_date]).to_i
+      date_parts = Choice.choices[:manual_date].split('-')
+      year = date_parts[0].to_i
+      month = date_parts[1].to_i
+      day = date_parts[2].to_i
+      today = Time.new(year, month, day).to_i
     else
       today = Date.today.prev_day.to_time.to_i
     end
@@ -108,8 +115,11 @@ else
     socket.write(sleep_detail_message)
 
     # sleep summary
+    # use the most recent sleep_xid to get the summary
+    #sleep_info = up.get_sleep_summary( sleep_xids[0] )
     sleep_info = up.get_sleep_summary
     sleep_info['items'].each do |item|
+      #puts "TODAY: #{today} TIME_CREATED: #{item['time_created']}"  # debug
       if today < item['time_created']
         sleep_summary_message = []
         date = Time.at item['time_created']
@@ -118,14 +128,18 @@ else
         puts date.to_s + " " + item['title']
         puts "Timestamp: #{item['time_created']}"
         puts "Light Sleep: #{item['details']['light']/60}"
-        puts "Deep Sleep: #{item['details']['deep']/60}"
+        puts "Deep Sleep: #{item['details']['clinical_deep']/60}"
+        puts "REM Sleep: #{item['details']['rem']/60}"
         puts "Woke Up: #{item['details']['awakenings']} time(s)"
         puts "Sleep Quality: #{item['details']['quality']}"
 
         message = "#{$metric_prefix}.summary.light_minutes #{item['details']['light']/60} #{item['time_created']}\n"
         sleep_summary_message.push( message )
 
-        message = "#{$metric_prefix}.summary.deep_minutes #{item['details']['deep']/60} #{item['time_created']}\n"
+        message = "#{$metric_prefix}.summary.deep_minutes #{item['details']['clinical_deep']/60} #{item['time_created']}\n"
+        sleep_summary_message.push( message )
+
+        message = "#{$metric_prefix}.summary.rem_minutes #{item['details']['rem']/60} #{item['time_created']}\n"
         sleep_summary_message.push( message )
 
         message = "#{$metric_prefix}.summary.awakenings #{item['details']['awakenings']} #{item['time_created']}\n"
